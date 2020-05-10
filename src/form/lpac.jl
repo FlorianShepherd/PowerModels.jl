@@ -5,6 +5,7 @@ function variable_bus_voltage(pm::AbstractLPACModel; kwargs...)
     variable_bus_voltage_angle(pm; kwargs...)
     variable_bus_voltage_magnitude(pm; kwargs...)
     variable_buspair_cosine(pm; kwargs...)
+    variable_ne_buspair_cosine(pm; kwargs...)
 end
 
 ""
@@ -135,8 +136,18 @@ end
 function variable_ne_branch_voltage(pm::AbstractLPACCModel; kwargs...)
 end
 
-"copied from DC"
-function constraint_ne_model_voltage(pm::AbstractLPACCModel; kwargs...)
+"copied from above and added cs_ne"
+function constraint_ne_model_voltage(pm::AbstractLPACCModel, n::Int)
+    _check_missing_keys(var(pm, n), [:cs_ne], typeof(pm))
+
+    t = var(pm, n, :va)
+    cs_ne = var(pm, n, :cs_ne)
+
+    for (bp, buspair) in ref(pm, n, :buspairs)
+        i,j = bp
+        vad_max = max(abs(buspair["angmin"]), abs(buspair["angmax"]))
+        JuMP.@constraint(pm.model, cs_ne[bp] <= 1 - (1-cos(vad_max))/vad_max^2*(t[i] - t[j])^2)
+    end
 end
 
 "modified from above"
@@ -148,7 +159,7 @@ function constraint_ne_ohms_yt_from(pm::AbstractLPACCModel, n::Int, i, f_bus, t_
     phi_to = var(pm, n, :phi, t_bus)
     va_fr  = var(pm, n, :va, f_bus)
     va_to  = var(pm, n, :va, t_bus)
-    cs     = var(pm, n, :cs_ne, i) # how to obtain cs for ne? 
+    cs     = var(pm, n, :cs_ne, (f_bus, t_bus)) # how to obtain cs for ne? 
 
     JuMP.@constraint(pm.model, p_fr ==  (g+g_fr)/tm^2*(1.0 + 2*phi_fr) + (-g*tr+b*ti)/tm^2*(cs + phi_fr + phi_to) + (-b*tr-g*ti)/tm^2*(va_fr-va_to) )
     JuMP.@constraint(pm.model, q_fr == -(b+b_fr)/tm^2*(1.0 + 2*phi_fr) - (-b*tr-g*ti)/tm^2*(cs + phi_fr + phi_to) + (-g*tr+b*ti)/tm^2*(va_fr-va_to) )
@@ -164,7 +175,7 @@ function constraint_ne_ohms_yt_to(pm::AbstractLPACCModel, n::Int, i, f_bus, t_bu
     va_fr  = var(pm, n, :va, f_bus)
     va_to  = var(pm, n, :va, t_bus)
     #cs      = var(pm, n, :branch_ne, i) # copied from ACP, but that's z
-    cs     = var(pm, n, :cs_ne, i) # how to obtain cs for ne? 
+    cs     = var(pm, n, :cs_ne, (f_bus, t_bus)) # how to obtain cs for ne? 
 
     JuMP.@constraint(pm.model, p_to ==  (g+g_to)*(1.0 + 2*phi_to) + (-g*tr-b*ti)/tm^2*(cs + phi_fr + phi_to) + (-b*tr+g*ti)/tm^2*-(va_fr-va_to) )
     JuMP.@constraint(pm.model, q_to == -(b+b_to)*(1.0 + 2*phi_to) - (-b*tr+g*ti)/tm^2*(cs + phi_fr + phi_to) + (-g*tr-b*ti)/tm^2*-(va_fr-va_to) )
@@ -228,4 +239,29 @@ function constraint_ne_power_balance(pm::AbstractLPACCModel, n::Int, i::Int, bus
         sol(pm, n, :bus, i)[:lam_kcl_r] = cstr_p
         sol(pm, n, :bus, i)[:lam_kcl_i] = cstr_q
     end
+end
+
+"copied from DC"
+function variable_bus_voltage_on_off(pm::AbstractLPACCModel; kwargs...)
+    variable_bus_voltage_angle(pm; kwargs...)
+end
+
+"copied from DC"
+function constraint_model_voltage_on_off(pm::AbstractLPACCModel; kwargs...)
+end
+
+"modified from above"
+function constraint_ohms_yt_from_on_off(pm::AbstractLPACCModel, n::Int, i, f_bus, t_bus, f_idx, t_idx, g, b, g_fr, b_fr, tr, ti, tm, vad_min, vad_max)
+    # from above
+    p_fr   = var(pm, n, :p_ne, f_idx)
+    q_fr   = var(pm, n, :q_ne, f_idx)
+    phi_fr = var(pm, n, :phi, f_bus)
+    phi_to = var(pm, n, :phi, t_bus)
+    va_fr  = var(pm, n, :va, f_bus)
+    va_to  = var(pm, n, :va, t_bus)
+    cs     = var(pm, n, :cs_ne, (f_bus, t_bus)) # how to obtain cs for ne? 
+
+    JuMP.@constraint(pm.model, p_fr ==  (g+g_fr)/tm^2*(1.0 + 2*phi_fr) + (-g*tr+b*ti)/tm^2*(cs + phi_fr + phi_to) + (-b*tr-g*ti)/tm^2*(va_fr-va_to) )
+    JuMP.@constraint(pm.model, q_fr == -(b+b_fr)/tm^2*(1.0 + 2*phi_fr) - (-b*tr-g*ti)/tm^2*(cs + phi_fr + phi_to) + (-g*tr+b*ti)/tm^2*(va_fr-va_to) )
+
 end

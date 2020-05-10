@@ -1321,3 +1321,35 @@ function variable_shunt_admittance_factor(pm::AbstractPowerModel; nw::Int=pm.cnw
         _IM.sol_component_value(pm, nw, :shunt, :bs, ids(pm, nw, :shunt), sol_bs)
     end
 end
+
+"LPAC"
+function variable_ne_buspair_cosine(pm::AbstractPowerModel; nw::Int=pm.cnw, bounded::Bool=true, report::Bool=true)
+    cs_ne = var(pm, nw)[:cs_ne] = JuMP.@variable(pm.model,
+        [bp in ids(pm, nw, :buspairs)], base_name="$(nw)_cs_ne",
+        start = comp_start_value(ref(pm, nw, :buspairs, bp), "cs_ne_start", 1.0)
+    )
+
+    if bounded
+        for (bp, buspair) in ref(pm, nw, :buspairs)
+            angmin = buspair["angmin"]
+            angmax = buspair["angmax"]
+            if angmin >= 0
+                cos_max = cos(angmin)
+                cos_min = cos(angmax)
+            end
+            if angmax <= 0
+                cos_max = cos(angmax)
+                cos_min = cos(angmin)
+            end
+            if angmin < 0 && angmax > 0
+                cos_max = 1.0
+                cos_min = min(cos(angmin), cos(angmax))
+            end
+
+            JuMP.set_lower_bound(cs_ne[bp], cos_min)
+            JuMP.set_upper_bound(cs_ne[bp], cos_max)
+        end
+    end
+
+    report && sol_component_value_buspair(pm, nw, :buspairs, :cs_ne, ids(pm, nw, :buspairs), cs_ne)
+end
